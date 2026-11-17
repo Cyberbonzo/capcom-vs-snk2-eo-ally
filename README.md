@@ -4,6 +4,8 @@ Projeto experimental de recompilação estática para Linux x86-64, desenvolvido
 
 Versão do projeto: **0.1.0**. Revisão suportada: GameCube USA **GEOE08**.
 
+Repositório: https://github.com/Cyberbonzo/capcom-vs-snk2-eo-ally
+
 ## Estado
 
 - CPU PowerPC traduzida previamente em C e compilada para x86-64, usando o [gcn-recomp](https://github.com/ethannicholas/gcn-recomp), revisão fixa `9e93f1bb7cc4a370af53c895e971fdcab55ed3fc`.

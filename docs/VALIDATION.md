@@ -8,6 +8,7 @@
 - Leitura dos limites em execução: borda esquerda em X=-405 com câmera=-192 (diferença de -213), ultrapassando o limite anterior de -160. Também observada a marca de colisão da borda direita após ampliação.
 - Cenário de Xangai preencheu ambos os lados nas capturas após a correção. O usuário confirmou que o ajuste de tela e movimento funcionou.
 - O patch completo foi reaplicado a arquivos originais da revisão fixada; conteúdo comparado após normalizar finais de linha Windows/Linux. Aplicação repetida reconheceu que o patch já estava instalado.
+- [Verificação de código no GitHub aprovada](https://github.com/Cyberbonzo/capcom-vs-snk2-eo-ally/actions/runs/44153366432): compilação Clang dos hooks, aplicação idempotente do patch, validação Python/shell e testes das seis barras, configurações desativadas, isolamento da CPU e limites de escrita na RAM.
 
 ## Pendente
 
