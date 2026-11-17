@@ -1,0 +1,503 @@
+diff --git a/runtime/gx/fifo.cpp b/runtime/gx/fifo.cpp
+index 2554cbb..00450bd 100644
+--- a/runtime/gx/fifo.cpp
++++ b/runtime/gx/fifo.cpp
+@@ -798,3 +798,9 @@ void debug_dump_fifo() {
+             gx::g_state.cp[0x70 + (g_pending.empty() ? 0 : g_pending[0] & 7)], gx::g_state.cp[0x80 + (g_pending.empty() ? 0 : g_pending[0] & 7)],
+             gx::g_state.cp[0x90 + (g_pending.empty() ? 0 : g_pending[0] & 7)]);
+ }
++
++namespace gx { void queue_vi_marker(ViDisplayState state); }
++void gx_queue_vi_scanout(ViDisplayState state) {
++    if (fe_threaded()) { fe_submit(); fe_wait_idle(); }
++    gx::queue_vi_marker(state);
++}
+diff --git a/runtime/gx/render.h b/runtime/gx/render.h
+index 1544926..4771e41 100644
+--- a/runtime/gx/render.h
++++ b/runtime/gx/render.h
+@@ -154,7 +154,7 @@ struct EyeDrawFacts {
+ enum EyeVerdict : int { EyeKeep = 0, EyeHideDraw = 1, EyeHideObject = 2, EyeFlat = 3, EyeScreen = 4, EyeRestore = 5, EyeFacing = 6, EyeLateObject = 7, EyeTrueScale = 8, EyeHideEverywhere = 9, EyeFrameScreen = 10, EyePushOut = 11 };
+ using EyeFilter = int (*)(const PixelState& st, const EyeDrawFacts& facts);
+ 
+-enum class CmdType : uint8_t { Draw, EfbCopy, Present };
++enum class CmdType : uint8_t { Draw, EfbCopy, Present, ViScanout };
+ 
+ struct EfbCopyCmd {
+     uint32_t src_x, src_y, src_w, src_h;   // EFB rect
+diff --git a/runtime/gx/render_gl.cpp b/runtime/gx/render_gl.cpp
+index 648e109..c9ed677 100644
+--- a/runtime/gx/render_gl.cpp
++++ b/runtime/gx/render_gl.cpp
+@@ -85,6 +85,7 @@ struct Program {
+     GLuint prog;
+     GLint u_proj, u_vp_a, u_vp_b, u_point_size, u_tex, u_reg, u_kstage, u_texsize, u_indmtx, u_indscale,
+         u_alpharef, u_fog, u_fogmode, u_fogcolor, u_indcoordscale, u_texsnap, u_zbias, u_zplane, u_dstalpha;
++    GLint u_wide_x;
+     GLint u_vr, u_view, u_crop, u_zproj, u_screen_uv, u_screen_px, u_screen_ripple, u_uvgrad;
+     GLint u_points, u_point_off;
+     mutable UniformShadow shadow;
+@@ -568,6 +569,7 @@ static const Program& register_program(const ShaderKey& k, GLuint p) {
+     pr.u_vp_a = glGetUniformLocation(p, "u_vp_a");
+     pr.u_vp_b = glGetUniformLocation(p, "u_vp_b");
+     pr.u_point_size = glGetUniformLocation(p, "u_point_size");
++    pr.u_wide_x = glGetUniformLocation(p, "u_wide_x");
+     pr.u_vr = glGetUniformLocation(p, "u_vr");
+     pr.u_view = glGetUniformLocation(p, "u_view");
+     pr.u_crop = glGetUniformLocation(p, "u_crop");
+@@ -1373,6 +1375,10 @@ static const GLenum kBlendSrc[8] = {GL_ZERO, GL_ONE, GL_DST_COLOR, GL_ONE_MINUS_
+ static const GLenum kBlendDst[8] = {GL_ZERO, GL_ONE, GL_SRC_COLOR, GL_ONE_MINUS_SRC_COLOR, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_DST_ALPHA, GL_ONE_MINUS_DST_ALPHA};
+ static const GLenum kDepthFunc[8] = {GL_NEVER, GL_LESS, GL_EQUAL, GL_LEQUAL, GL_GREATER, GL_NOTEQUAL, GL_GEQUAL, GL_ALWAYS};
+ static bool samples_fullscreen_copy(const PixelState& st);
++static bool native_wide_enabled() {
++    static const bool enabled = getenv("CVS2_WIDESCREEN") && atoi(getenv("CVS2_WIDESCREEN")) != 0;
++    return enabled;
++}
+ static bool is_fullscreen_tex(uint32_t id);
+ static void note_fullscreen_copies(const Batch& b);
+ 
+@@ -1774,6 +1780,9 @@ static void apply_state(const PixelState& st, int prim) {
+         g_applied.key = key;
+         g_applied.pr = &pr;
+     }
++    // Widen before clipping, retaining sprite and HUD proportions on a 16:9 output.
++    // A composite that samples the complete EFB already contains this correction.
++    glUniform3f(pr.u_wide_x, native_wide_enabled() && !samples_fullscreen_copy(st) ? 0.75f : 1.0f, 1.0f, 0.0f);
+     // What this program was last given; see UniformShadow. A group is uploaded when its
+     // inputs differ from the record, or the record is not current.
+     UniformShadow& u = pr.shadow;
+@@ -2713,8 +2722,10 @@ static void blit_rect_to_output(GLuint src_tex, uint32_t tex_w, uint32_t tex_h,
+     glClear(GL_COLOR_BUFFER_BIT);
+     // Letterbox to 4:3
+     int w = g_win_w, h = g_win_h;
+-    int vw = w, vh = w * 3 / 4;
+-    if (vh > h) { vh = h; vw = h * 4 / 3; }
++    const int aspect_w = native_wide_enabled() ? 16 : 4;
++    const int aspect_h = native_wide_enabled() ? 9 : 3;
++    int vw = w, vh = w * aspect_h / aspect_w;
++    if (vh > h) { vh = h; vw = h * aspect_w / aspect_h; }
+     glViewport((w - vw) / 2, (h - vh) / 2, vw, vh);
+     glUseProgram(g_blit_prog);
+     glActiveTexture(GL_TEXTURE0);
+@@ -2736,10 +2747,11 @@ static void blit_rect_to_output(GLuint src_tex, uint32_t tex_w, uint32_t tex_h,
+ // rows has been written since it was last shown. The VI's timing registers say how many
+ // rows a frame has; a copy that covers them all presents at once, as before.
+ struct Xfb {
+-    uint32_t base, stride, h;
++    uint32_t base, stride, h, w;
+     GLuint tex, fbo;
+     std::vector<uint8_t> written;
+     uint32_t written_rows;
++    bool complete = false;
+ };
+ static std::vector<Xfb> g_xfbs;
+ // At a change of internal scale: an XFB's texture is sized at the scale it was made at and
+@@ -2753,13 +2765,15 @@ static void xfbs_drop() {
+     g_xfbs.clear();
+ }
+ 
+-static Xfb& xfb_for(uint32_t dest, uint32_t w, uint32_t stride, uint32_t h) {
++static Xfb& xfb_for(uint32_t dest, uint32_t w, uint32_t stride, uint32_t h, bool exact = false) {
+     for (auto& x : g_xfbs)
+-        if (x.stride == stride && x.h == h && dest >= x.base && dest < x.base + stride * h) return x;
++        if (x.stride == stride && x.h == h && x.w == w && dest >= x.base &&
++            dest < x.base + stride * h && (!exact || dest == x.base)) return x;
+     Xfb x{};
+     x.base = dest;
+     x.stride = stride;
+     x.h = h;
++    x.w = w;
+     glGenTextures(1, &x.tex);
+     glBindTexture(GL_TEXTURE_2D, x.tex);
+     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)(w * g_scale), (GLsizei)(h * g_scale), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+@@ -2772,10 +2786,59 @@ static Xfb& xfb_for(uint32_t dest, uint32_t w, uint32_t stride, uint32_t h) {
+     glClear(GL_COLOR_BUFFER_BIT);
+     x.written.assign(h, 0);
+     g_xfbs.push_back(x);
+-    if (g_xfbs.size() > 8) g_xfbs.erase(g_xfbs.begin());
++    if (g_xfbs.size() > 8) {
++        glDeleteFramebuffers(1, &g_xfbs.front().fbo);
++        glDeleteTextures(1, &g_xfbs.front().tex);
++        g_xfbs.erase(g_xfbs.begin());
++    }
+     return g_xfbs.back();
+ }
+ 
++bool render_vi_present_enabled() {
++    static const bool enabled = [] {
++        const char* value = getenv("GCN_VI_PRESENT");
++        return value && atoi(value) != 0;
++    }();
++    return enabled;
++}
++
++// Keep the actual pixels for every display-copy destination, not only the last
++// EFB. A game can issue several copies (including scratch buffers) between VI
++// retraces, and the copy may immediately clear the EFB for its next pass.
++static void xfb_write_vi(const EfbCopyCmd& c) {
++    const ViDisplayState scanout = vi_display_state();
++    const uint32_t h = std::max(scanout.height, c.dst_h);
++    if (!h || !c.dst_w || !c.dst_h || !c.src_w || !c.src_h) return;
++    const uint32_t stride = c.dst_w * 2;
++    uint32_t base = c.dest;
++    // A partial first copy can start below row zero. VI supplies the base when
++    // that is the active buffer; otherwise an already-known XFB supplies it.
++    if (scanout.address && c.dest >= scanout.address &&
++        uint64_t(c.dest) < uint64_t(scanout.address) + uint64_t(stride) * h &&
++        (c.dest - scanout.address) % stride == 0)
++        base = scanout.address;
++    Xfb& x = xfb_for(base, c.dst_w, stride, h, c.dst_h >= h || base == scanout.address);
++    if (c.dest < x.base || (c.dest - x.base) % stride != 0) return;
++    const uint32_t row0 = (c.dest - x.base) / stride;
++    if (row0 >= h) return;
++    const uint32_t rows = std::min(c.dst_h, h - row0);
++    if (!x.written_rows) x.complete = false;
++    glBindFramebuffer(GL_READ_FRAMEBUFFER, g_efb_fbo);
++    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, x.fbo);
++    glDisable(GL_SCISSOR_TEST);
++    glBlitFramebuffer(c.src_x * g_scale, (EFB_H - c.src_y - c.src_h) * g_scale,
++                      (c.src_x + c.src_w) * g_scale, (EFB_H - c.src_y) * g_scale,
++                      0, (h - row0 - rows) * g_scale, c.dst_w * g_scale, (h - row0) * g_scale,
++                      GL_COLOR_BUFFER_BIT, GL_NEAREST);
++    for (uint32_t row = row0; row < row0 + rows; ++row)
++        if (!x.written[row]) { x.written[row] = 1; ++x.written_rows; }
++    if (x.written_rows == h) {
++        x.complete = true;
++        std::fill(x.written.begin(), x.written.end(), 0);
++        x.written_rows = 0;
++    }
++}
++
+ static void dump_xfb(const Xfb& x, uint32_t w) {
+     int pw = w * g_scale, ph = x.h * g_scale;
+     std::vector<uint8_t> px((size_t)pw * ph * 4), flipped((size_t)pw * ph * 4);
+@@ -2812,6 +2875,10 @@ static Xfb* xfb_write(const EfbCopyCmd& c) {
+ }
+ 
+ static void present(const EfbCopyCmd& c) {
++    if (render_vi_present_enabled()) {
++        xfb_write_vi(c);
++        return;
++    }
+     // A copy that is part of a frame: into the XFB, and nothing to show unless it was the
+     // last part.
+     Xfb* xfb = nullptr;
+@@ -2849,6 +2916,77 @@ static void present(const EfbCopyCmd& c) {
+ void render_set_output_fbo(unsigned fbo) { g_output_fbo = (GLuint)fbo; }
+ uint32_t present_count() { return g_present_count; }
+ 
++static ViDisplayState g_ordered_scanout;
++
++bool render_present_vi() {
++    if (!render_vi_present_enabled()) return false;
++    const ViDisplayState scanout = g_ordered_scanout;
++    static uint32_t last_serial = 0;
++    if (!scanout.serial || scanout.serial == last_serial || !scanout.address || !scanout.height) return false;
++    for (const Xfb& x : g_xfbs) {
++        if (!x.complete || x.base != scanout.address || x.h != scanout.height) continue;
++        blit_rect_to_output(x.tex, x.w, x.h, 0, 0, x.w, x.h);
++        last_serial = scanout.serial;
++        ++g_present_count;
++        if (g_dump_dir && g_dump_every && g_present_count % g_dump_every == 0) {
++            const char* range = getenv("GCN_DUMP_RANGE");
++            const int lo = range ? atoi(range) : -1;
++            const char* dash = range ? strchr(range, '-') : nullptr;
++            const int hi = dash ? atoi(dash + 1) : lo;
++            if (lo < 0 || (int(g_present_count) >= lo && int(g_present_count) <= hi))
++                dump_xfb(x, x.w);
++        }
++        static const bool log = getenv("GCN_VI_LOG") != nullptr;
++        if (log)
++            fprintf(stderr, "[vi-present] retrace=%u frame=%u xfb=%08X size=%ux%u\n",
++                    scanout.serial, g_present_count, x.base, x.w, x.h);
++        // Restore the EFB binding for the next GX batch. The window's completed
++        // image remains ready for SDL_GL_SwapWindow on the desktop thread.
++        glBindFramebuffer(GL_FRAMEBUFFER, g_efb_fbo);
++        glViewport(0, 0, EFB_W * g_scale, EFB_H * g_scale);
++        gl_state_invalidate();
++        return true;
++    }
++    // The selected buffer may still be queued for rendering. Keep the previous
++    // display rather than substituting a different/scratch XFB, and retry it.
++    return false;
++}
++
++
++// Full-screen 2D backdrops use uniform zoom-to-fill; text, portraits and
++// gameplay sprites keep their original physical proportions and safe area.
++static bool wide_backdrop(const Batch& b, const Cmd& c, const PixelState& st, float& anchor_y) {
++    if (!native_wide_enabled() || c.count > 192 || c.vcount < 4 || samples_fullscreen_copy(st)) return false;
++    const float height = static_cast<float>(g_ordered_scanout.height);
++    if (height <= 0) return false;
++    int xo, yo; scissor_offset(st.bp, xo, yo);
++    float x0 = 1e30f, y0 = 1e30f, x1 = -1e30f, y1 = -1e30f;
++    float z0 = 1e30f, z1 = -1e30f;
++    const float* p = st.proj;
++    for (uint32_t j = 0; j < c.vcount; ++j) {
++        const float* v = b.verts[c.vfirst + j].pos;
++        z0 = std::min(z0, v[2]); z1 = std::max(z1, v[2]);
++        const bool perspective = static_cast<int>(p[6]) == 0;
++        const float w = perspective ? -v[2] : 1.0f;
++        if (w <= 0.0001f) return false;
++        const float cx = p[0] * v[0] + p[1] * (perspective ? v[2] : 1.0f);
++        const float cy = p[2] * v[1] + p[3] * (perspective ? v[2] : 1.0f);
++        const float x = st.viewport[3] - xo + st.viewport[0] * cx / w;
++        const float y = st.viewport[4] - yo + st.viewport[1] * cy / w;
++        x0 = std::min(x0, x); x1 = std::max(x1, x);
++        y0 = std::min(y0, y); y1 = std::max(y1, y);
++    }
++    const bool full_width = x0 <= EFB_W * 0.02f && x1 >= EFB_W * 0.98f;
++    const bool top = y0 <= height * 0.02f;
++    const bool bottom = y1 >= height * 0.98f;
++    if (z1-z0 >= 0.001f || !full_width) return false;
++    // Large decorative strips at a screen edge (such as menu flames) zoom about
++    // that edge. This fills the width without moving the decoration off screen.
++    if (!((top && bottom) || ((top || bottom) && y1-y0 >= height * 0.25f))) return false;
++    const float pixel_anchor = top && bottom ? height * 0.5f : bottom ? height : 0.0f;
++    anchor_y = 2.0f * pixel_anchor / EFB_H - 1.0f;
++    return true;
++}
+ 
+ // Executes a batch. Returns true if it contained a Present.
+ // The camera looks down by `pitch`, so the world's up arrives at (0, cos, sin) in the
+@@ -4433,6 +4571,24 @@ static bool execute_batch(Batch& b, bool do_present, const std::vector<uint8_t>*
+             } else if (zfreeze && g_applied.pr && g_applied.pr->u_zplane >= 0) {
+                 glUniform4fv(g_applied.pr->u_zplane, 1, g_zplane);
+             }
++            if (native_wide_enabled() && g_applied.pr) {
++                const PixelState& st = b.states[c.state];
++                float anchor_y = float(g_ordered_scanout.height) / EFB_H - 1.0f;
++                // GEOE08 uses the unit-focal, near=0.1 perspective pass for
++                // fighters/UI, and a near=1 camera for the authored 3D stages.
++                // Stage meshes end at the original frustum: cover the wider
++                // output by uniform zoom, never horizontal-only stretching.
++                const bool stage = static_cast<int>(st.proj[6]) == 0 &&
++                    st.proj[0] > 1.01f && fabsf(st.proj[5]) > 0.9f &&
++                    !samples_fullscreen_copy(st);
++                const bool backdrop = wide_backdrop(b, c, st, anchor_y) || stage;
++                // Keep the floor near the fighters' baseline while cropping
++                // mostly the upper scenery. Sprite positions are unaffected.
++                if (stage) anchor_y = 2.0f * 0.85f * g_ordered_scanout.height / EFB_H - 1.0f;
++                const bool composite = samples_fullscreen_copy(st);
++                const float sy = backdrop ? 4.0f / 3.0f : 1.0f;
++                glUniform3f(g_applied.pr->u_wide_x, backdrop || composite ? 1.0f : 0.75f, sy, (1.0f - sy) * anchor_y);
++            }
+             draw_cmd(b, c);
+             // GCN_PIXEL=x,y[;x,y...] (EFB pixels) with GCN_DRAWLOG=<frame>: after every draw
+             // of that frame, each listed pixel is read back and printed when it changed,
+@@ -4489,6 +4645,9 @@ static bool execute_batch(Batch& b, bool do_present, const std::vector<uint8_t>*
+             gl_state_invalidate();
+             break;
+         }
++        case CmdType::ViScanout:
++            g_ordered_scanout = {c.state, c.copy.dest, c.copy.dst_h};
++            break;
+         case CmdType::Present:
+             if (do_present) present(c.copy);
+             presented = true;
+diff --git a/runtime/gx/render_gl.h b/runtime/gx/render_gl.h
+index c9ceaf3..fcd801e 100644
+--- a/runtime/gx/render_gl.h
++++ b/runtime/gx/render_gl.h
+@@ -57,6 +57,10 @@ void render_set_window_size(int w, int h);
+ void render_set_output_fbo(unsigned fbo);
+ 
+ bool render_execute(Batch& b);
++// Optional VI-driven desktop scanout. Display copies are cached before their
++// clears; this presents only the XFB selected by VI, once per retrace.
++bool render_vi_present_enabled();
++bool render_present_vi();
+ 
+ // Frames presented so far, for tracing what a display frame is actually showing.
+ uint32_t present_count();
+diff --git a/runtime/gx/shadergen.cpp b/runtime/gx/shadergen.cpp
+index 6cc4a01..f2fbad2 100644
+--- a/runtime/gx/shadergen.cpp
++++ b/runtime/gx/shadergen.cpp
+@@ -232,6 +232,7 @@ uniform float u_point_size;
+ //       the game's clip x and y over the draw (ds/dx, ds/dy, dt/dx, dt/dy), to carry it out
+ //       with the vertex.
+ uniform int u_vr;
++uniform vec3 u_wide_x;
+ uniform vec4 u_uvgrad[8];
+ uniform mat4 u_view;       // eye transform, relative to the game's camera; under 3, fog's
+ uniform mat4 u_crop;       // four clip distances, each linear in the vertex
+@@ -365,7 +366,7 @@ void main() {
+         p.w = clip.w;
+         // GX's viewport transform points Y down and the EFB blit flips the image back,
+         // so the flat path negates Y here to cancel it.
+-        gl_Position = vec4(p.x, -p.y, p.z, p.w);
++        gl_Position = vec4(p.x * u_wide_x.x, -(p.y * u_wide_x.y + p.w * u_wide_x.z), p.z, p.w);
+         // GX clips depth before the viewport, at -w <= z <= 0, and clamps the depth the
+         // viewport makes of what is left to the buffer's range. A viewport may reach past
+         // that range (a far of 10 instead of 1 squeezes the scene's depth into the front
+diff --git a/runtime/gx/xf.cpp b/runtime/gx/xf.cpp
+index 80a7a17..f3fa07c 100644
+--- a/runtime/gx/xf.cpp
++++ b/runtime/gx/xf.cpp
+@@ -190,6 +190,8 @@ static void flush_batch() {
+ // ---------------------------------------------------------------------------
+ // Helpers
+ // ---------------------------------------------------------------------------
++
++
+ static inline float xf_f(uint32_t i) {
+     uint32_t v = g_state.xf_mem[i & 0x7FF];
+     float f;
+@@ -1949,6 +1951,18 @@ void renderer_efb_copy(uint32_t dest_addr, bool /*unused*/) {
+     }
+ }
+ 
++void queue_vi_marker(ViDisplayState state) {
++    if (!g_batch) g_batch = std::make_unique<Batch>();
++    Cmd marker{};
++    marker.type = CmdType::ViScanout;
++    marker.state = state.serial;
++    marker.copy.dest = state.address;
++    marker.copy.dst_h = state.height;
++    g_batch->cmds.push_back(marker);
++    g_have_last_state = false;
++    flush_batch();
++}
++
+ }  // namespace gx
+ 
+ uint32_t gx_frames_submitted() { return gx::g_frames_submitted.load(); }
+diff --git a/runtime/hw/vi.cpp b/runtime/hw/vi.cpp
+index 6357606..e7d53f0 100644
+--- a/runtime/hw/vi.cpp
++++ b/runtime/hw/vi.cpp
+@@ -2,12 +2,20 @@
+ #include "../runtime.h"
+ #include <algorithm>
+ #include <atomic>
++#include <mutex>
+ 
+ static uint16_t g_vi[0x80];
+ static uint64_t g_frame_start;
+ static constexpr uint64_t FIELD_TICKS = (uint64_t)(TB_FREQ / 59.94);
+ std::atomic<uint32_t> g_vi_retrace_count{0};
+ std::atomic<uint32_t> g_vi_xfb_addr{0};
++static std::mutex g_vi_display_mutex;
++static ViDisplayState g_vi_display;
++
++ViDisplayState vi_display_state() {
++    std::lock_guard<std::mutex> lock(g_vi_display_mutex);
++    return g_vi_display;
++}
+ 
+ static void vi_update_irq() {
+     bool any = false;
+@@ -26,9 +34,15 @@ static bool vi_progressive() { return (g_vi[0x02 >> 1] >> 2) & 1; }
+ static void vi_retrace() {
+     g_frame_start = now_ticks();
+     g_field = vi_progressive() ? 0 : g_field ^ 1;
+-    g_vi_retrace_count++;
+     uint32_t tfbl = ((uint32_t)g_vi[0x1C >> 1] << 16) | g_vi[0x1E >> 1];
+-    g_vi_xfb_addr = (tfbl & 0x10000000) ? ((tfbl & 0xFFFFFF) << 5) : (tfbl & 0xFFFFFF);
++    const uint32_t address = (tfbl & 0x10000000) ? ((tfbl & 0xFFFFFF) << 5) : (tfbl & 0xFFFFFF);
++    g_vi_xfb_addr = address;
++    const uint32_t serial = g_vi_retrace_count.fetch_add(1) + 1;
++    {
++        std::lock_guard<std::mutex> lock(g_vi_display_mutex);
++        g_vi_display = {serial, address, vi_display_height()};
++    }
++    if (getenv("GCN_VI_PRESENT")) gx_queue_vi_scanout({serial, address, vi_display_height()});
+     // Raise display interrupts 0 and 1 if enabled.
+     for (int i = 0; i < 2; i++) {
+         uint16_t& hi = g_vi[(0x30 + 4 * i) >> 1];
+diff --git a/runtime/main.cpp b/runtime/main.cpp
+index b959871..a485799 100644
+--- a/runtime/main.cpp
++++ b/runtime/main.cpp
+@@ -183,8 +183,8 @@ static void merge_desktop_pad(PadState& p) {
+     if (g_ctrl) {
+         auto b = [&](SDL_GameControllerButton btn) { return SDL_GameControllerGetButton(g_ctrl, btn); };
+         if (b(SDL_CONTROLLER_BUTTON_A)) p.buttons |= PAD_A;
+-        if (b(SDL_CONTROLLER_BUTTON_X)) p.buttons |= PAD_B;
+-        if (b(SDL_CONTROLLER_BUTTON_B)) p.buttons |= PAD_X;
++        if (b(SDL_CONTROLLER_BUTTON_B)) p.buttons |= PAD_B;
++        if (b(SDL_CONTROLLER_BUTTON_X)) p.buttons |= PAD_X;
+         if (b(SDL_CONTROLLER_BUTTON_Y)) p.buttons |= PAD_Y;
+         if (b(SDL_CONTROLLER_BUTTON_START)) p.buttons |= PAD_START;
+         if (b(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)) p.buttons |= PAD_Z;
+@@ -197,7 +197,7 @@ static void merge_desktop_pad(PadState& p) {
+         if (abs(lx) > 4000 || abs(ly) > 4000) { p.stick_x = axis_to_u8(lx, false); p.stick_y = axis_to_u8(ly, true); }
+         int rx = SDL_GameControllerGetAxis(g_ctrl, SDL_CONTROLLER_AXIS_RIGHTX);
+         int ry = SDL_GameControllerGetAxis(g_ctrl, SDL_CONTROLLER_AXIS_RIGHTY);
+-        if (abs(rx) > 1000 || abs(ry) > 1000) { p.cstick_x = axis_to_u8(rx, false); p.cstick_y = axis_to_u8(ry, true); }
++        if (abs(rx) > 4000 || abs(ry) > 4000) { p.cstick_x = axis_to_u8(rx, false); p.cstick_y = axis_to_u8(ry, true); }
+         int lt = SDL_GameControllerGetAxis(g_ctrl, SDL_CONTROLLER_AXIS_TRIGGERLEFT);
+         int rt = SDL_GameControllerGetAxis(g_ctrl, SDL_CONTROLLER_AXIS_TRIGGERRIGHT);
+         if (lt > 1000) { p.trig_l = std::max(p.trig_l, (uint8_t)(lt * 255 / 32767)); if (lt > 30000) p.buttons |= PAD_L; }
+@@ -357,7 +357,7 @@ int main(int argc, char** argv) {
+                                                   (gl_debug ? SDL_GL_CONTEXT_DEBUG_FLAG : 0));
+     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+     SDL_Window* win = SDL_CreateWindow(GCN_APP_LABEL, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+-                                       1280, 960, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI |
++                                       1920, 1080, SDL_WINDOW_OPENGL | SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_ALLOW_HIGHDPI |
+                                        (hidden ? SDL_WINDOW_HIDDEN : 0));
+     if (!win) fatal("SDL_CreateWindow: %s", SDL_GetError());
+     // Ask for the newest core profile first: the renderer needs only GCN_GL_MAJOR.MINOR, but an
+@@ -427,7 +427,8 @@ int main(int argc, char** argv) {
+         SDL_GL_GetDrawableSize(win, &dw, &dh);
+         gx::render_set_window_size(dw, dh);
+         auto b = gx::take_batch(4);
+-        if (!b) continue;
++        bool presented = false;
++        if (b) {
+         // GCN_STEREOLOG=1: what the game's stereo hook (vr_game.h) would have a headset
+         // show, whenever the answer changes, numbered as the frame dumps are.
+         static const bool stereolog = getenv("GCN_STEREOLOG") != nullptr;
+@@ -439,7 +440,6 @@ int main(int argc, char** argv) {
+                 fprintf(stderr, "[stereo] frame %u: %s\n", gx::present_count(), want ? "stereo" : "theater");
+             }
+         }
+-        bool presented;
+         if (g_eye_mode) {
+             float P[16], V[16], H[16];
+             eye_matrices(P, V, H);
+@@ -468,6 +468,12 @@ int main(int argc, char** argv) {
+         } else {
+             presented = gx::render_execute(*b);
+         }
++        }
++        // The game's display copies are not display frames. With VI scanout
++        // enabled, drain all GX work, but only swap the buffer selected at a
++        // retrace. Poll even when no batch arrived, since VI can refresh a static
++        // image without another copy.
++        if (gx::render_vi_present_enabled()) presented = gx::render_present_vi();
+         if (presented) {
+             // macOS (GL on Metal) only presents correctly with the window framebuffer bound.
+             glBindFramebuffer(GL_FRAMEBUFFER, 0);
+diff --git a/runtime/recomp.h b/runtime/recomp.h
+index 727655a..f132e33 100644
+--- a/runtime/recomp.h
++++ b/runtime/recomp.h
+@@ -14,6 +14,10 @@ extern "C" {
+ #define GCN_CALL_TRACE 1
+ #endif
+ 
++/* GEOE08 camera-relative arena bounds, configured once per process. */
++uint32_t cvs2_arena_half_width(void);
++void cvs2_apply_assists(void);
++
+ typedef union { double d; uint64_t u; } FPR;
+ 
+ typedef struct CPU {
+diff --git a/runtime/runtime.h b/runtime/runtime.h
+index 67e6472..fa4c0be 100644
+--- a/runtime/runtime.h
++++ b/runtime/runtime.h
+@@ -27,6 +27,11 @@ constexpr uint32_t LC_SIZE = 0x40000;
+ void mem_init();
+ // The lines the VI scans out, from its timing registers (hw/vi.cpp); 0 before the game sets them.
+ uint32_t vi_display_height();
++// Coherent scanout state published by the guest thread at vertical retrace. The
++// renderer must not read the non-atomic VI register array directly.
++struct ViDisplayState { uint32_t serial = 0, address = 0, height = 0; };
++ViDisplayState vi_display_state();
++void gx_queue_vi_scanout(ViDisplayState state);
+ // Whether a recompiled function starts at `addr`.
+ bool recomp_is_function(uint32_t addr);
+ extern uint8_t* g_aram;

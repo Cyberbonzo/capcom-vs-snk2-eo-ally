@@ -1,0 +1,12 @@
+# GEOE08 game.rel: camera-relative player wall and paired-player clamp.
+# Preserve original 160-unit half-width when CVS2_WIDESCREEN is disabled.
+# Apply player assists before the game's per-frame controller processing.
+8008BF94 c->r[5] = c->r[3] + 0xBF70u - 0x10000u; cvs2_apply_assists();
+81842CF8 c->r[0] = c->r[3] - cvs2_arena_half_width();
+81842D04 c->r[3] = c->r[28] - cvs2_arena_half_width();
+81842D50 c->r[0] = c->r[3] + cvs2_arena_half_width();
+81842D5C c->r[3] = c->r[28] + cvs2_arena_half_width();
+81842EE0 c->r[0] = c->r[4] - cvs2_arena_half_width();
+81842EF8 c->r[4] = c->r[4] - cvs2_arena_half_width();
+81842F38 c->r[0] = c->r[4] + cvs2_arena_half_width();
+81842F50 c->r[4] = c->r[4] + cvs2_arena_half_width();

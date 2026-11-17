@@ -1,0 +1,22 @@
+name: Source checks (no game data)
+on: [push, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  config:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Obtain pinned MIT runtime
+        run: |
+          git clone https://github.com/ethannicholas/gcn-recomp.git upstream/gcn-recomp
+          git -C upstream/gcn-recomp checkout 9e93f1bb7cc4a370af53c895e971fdcab55ed3fc
+      - name: Apply patch twice and compile configuration tests
+        run: |
+          python3 source/apply-runtime.py
+          python3 source/apply-runtime.py
+          clang++ -std=c++17 -O2 -Wall -Wextra -Iupstream/gcn-recomp/runtime source/game-config.cpp tests/config.cpp -o /tmp/config-check
+          /tmp/config-check
+          /tmp/config-check disabled
+          python3 -m py_compile source/prepare.py source/apply-runtime.py
+          bash -n jogar.sh source/build-linux.sh

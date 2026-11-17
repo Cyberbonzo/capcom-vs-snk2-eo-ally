@@ -1,0 +1,2 @@
+800938B0 SelectThread_idle
+800938C0 SelectThread_idle_retry
