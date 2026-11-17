@@ -10,9 +10,11 @@
 - O patch completo foi reaplicado a arquivos originais da revisão fixada; conteúdo comparado após normalizar finais de linha Windows/Linux. Aplicação repetida reconheceu que o patch já estava instalado.
 - [Verificação de código no GitHub aprovada](https://github.com/Cyberbonzo/capcom-vs-snk2-eo-ally/actions/runs/44153366432): compilação Clang dos hooks, aplicação idempotente do patch, validação Python/shell e testes das seis barras, configurações desativadas, isolamento da CPU e limites de escrita na RAM.
 
+- A compilação Linux com as assistências terminou no Ally. O atalho Steam iniciou o executável e o jogo carregou o módulo game.rel. A cópia privada do executável e a do cartão de memória foram conferidas por SHA-256.
+
 ## Pendente
 
-O código posterior de GC-ism permanente e super infinito foi enviado ao Ally e a compilação foi iniciada, mas a rede do PC mudou antes de recolher o resultado final. Não há confirmação de execução desse build nem teste de supers em hardware. Os testes de código do GitHub não equivalem a essa confirmação.
+O teste físico dos especiais pelo analógico direito e dos supers com RB + analógico direito segue pendente nesta compilação, inclusive em Arcade e Training.
 
 Não se afirma cobertura exaustiva de todos os cenários, finais, combinações de personagens ou modos. O cenário de gelo não foi recapturado nesta última sessão de teste após a correção; a confirmação geral do usuário complementa as capturas de Xangai.
 

@@ -10,7 +10,7 @@
 | LT / RT | L / R |
 | Menu | Start / pausa original |
 
-O GC-ism usa o C-Stick para comandos simplificados. Os golpes disponíveis e a direção correspondente dependem do personagem. A combinação Z + C-Stick corresponde a RB + analógico direito no Ally. O último código mantém esse estilo ativo para jogadores humanos, com validação em hardware ainda pendente.
+O GC-ism usa o C-Stick para comandos simplificados. Os golpes disponíveis e a direção correspondente dependem do personagem. A combinação Z + C-Stick corresponde a RB + analógico direito no Ally. A versão instalada mantém esse estilo ativo para jogadores humanos. Falta verificar os comandos durante uma luta.
 
 Em `jogar.sh`:
 

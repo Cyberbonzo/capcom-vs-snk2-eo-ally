@@ -6,5 +6,5 @@
 - Controles do Ally, tela cheia, pausa original e cartão virtual.
 - Apresentação VI ordenada junto aos comandos gráficos, corrigindo lutadores que desapareciam.
 - 16:9 sem deformação: frustum de sprites ajustado, fundos com ampliação uniforme e recorte, limites horizontais ampliados para ambos os jogadores.
-- Hooks opcionais de GC-ism permanente e recursos de super para jogadores humanos; ver pendências em `docs/VALIDATION.md`.
+- GC-ism permanente e recursos de super para jogadores humanos. A versão com essas opções iniciou no Ally.
 - Preparação a partir de uma cópia própria, patch reproduzível do runtime e verificação de código sem dados do jogo.

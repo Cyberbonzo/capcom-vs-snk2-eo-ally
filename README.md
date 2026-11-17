@@ -14,7 +14,7 @@ Repositório: https://github.com/Cyberbonzo/capcom-vs-snk2-eo-ally
 - Limites de movimento alterados de ±160 para ±213 unidades em relação à câmera, incluindo a restrição de movimento de pares de lutadores.
 - Apresentação da imagem sincronizada com os comandos gráficos, corrigindo o desaparecimento intermitente dos personagens. Gameplay e 16:9 confirmados pelo usuário no Ally.
 - Controles físicos do Ally, pausa original do jogo e cartão de memória virtual.
-- Código para GC-ism permanente e barra de super continuamente abastecida para jogadores humanos. **O teste desta última alteração no Ally está pendente após perda da conexão de rede.** A confirmação anterior do usuário se refere à versão já executada, não a esse último build.
+- GC-ism permanente e barra de super continuamente abastecida para jogadores humanos. A versão com essas assistências foi compilada no Ally e iniciou pelo Steam. Falta confirmar os comandos durante uma luta.
 
 Consulte [compilação](docs/BUILD.md), [controles](docs/CONTROLS.md) e [validação](docs/VALIDATION.md).
 
