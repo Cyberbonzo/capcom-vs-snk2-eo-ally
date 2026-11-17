@@ -12,6 +12,8 @@
 
 - A compilação Linux com as assistências terminou no Ally. O atalho Steam iniciou o executável e o jogo carregou o módulo game.rel. A cópia privada do executável e a do cartão de memória foram conferidas por SHA-256.
 
+- Autosave testado no Ally com uma cópia do cartão existente que tinha Auto Save desligado. Alteramos a dificuldade no menu e saímos de Option Mode. O jogo confirmou a gravação. Após encerrar o processo e iniciar outro, o jogo recuperou o valor alterado e manteve Auto Save ligado. A dificuldade do cartão de uso normal foi preservada. Um desbloqueio novo e um novo recorde em partida não foram produzidos neste teste.
+
 ## Pendente
 
 O teste físico dos especiais pelo analógico direito e dos supers com RB + analógico direito segue pendente nesta compilação, inclusive em Arcade e Training.

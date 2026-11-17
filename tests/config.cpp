@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <vector>
 extern "C" {
+void cvs2_apply_autosave(void);
 uint8_t* g_mem;
 uint8_t g_gp_buf[64];
 uint32_t g_gp_len;
@@ -16,6 +17,7 @@ void gp_flush_line() { std::abort(); }
 }
 int main(int argc, char**) {
     const bool on = argc == 1;
+    setenv("CVS2_AUTOSAVE", on ? "1" : "0", 1);
     setenv("CVS2_WIDESCREEN", on ? "1" : "0", 1);
     setenv("CVS2_EASY_OPERATION", on ? "1" : "0", 1);
     setenv("CVS2_INFINITE_SUPER", on ? "1" : "0", 1);
@@ -30,8 +32,10 @@ int main(int argc, char**) {
         ST8(human + 0x1e9, groove);
         ST16(human + 0x1e2, 0); ST16(human + 0x208, 0);
         const auto before = ram;
+        cvs2_apply_autosave();
         cvs2_apply_assists();
         if (!on) { assert(ram == before); continue; }
+        assert(LD8(0x8022be2e) == 1);
         assert(LD8(human + 0x4ff) == 1 && LD8(0x802b588c) == 0);
         assert(LD16(human + 0x1e2) == expected[groove]);
         assert(LD16(human + 0x208) == (groove == 3 ? 1u : groove == 5 ? 1080u : 0u));
@@ -40,7 +44,7 @@ int main(int argc, char**) {
         // No adjacent or unrelated memory may be changed by the assist.
         for (size_t i = 0; i < ram.size(); ++i) {
             const uint32_t a = uint32_t(i) + 0x80000000u;
-            if (a == human + 0x4ff || a == 0x802b588c ||
+            if (a == 0x8022be2e || a == human + 0x4ff || a == 0x802b588c ||
                 (a >= human + 0x1e2 && a < human + 0x1e4) ||
                 (a >= human + 0x208 && a < human + 0x20a)) continue;
             assert(ram[i] == before[i]);

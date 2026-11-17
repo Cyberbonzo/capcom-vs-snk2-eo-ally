@@ -13,6 +13,13 @@ extern "C" uint32_t cvs2_arena_half_width(void) {
     return width;
 }
 
+extern "C" void cvs2_apply_autosave(void) {
+    // GEOE08 system profile, Memory Card > Auto Save. The native card code
+    // handles slot A, serialization, checksums and loading on the next boot.
+    static const bool autosave = enabled("CVS2_AUTOSAVE");
+    if (autosave) ST8(0x8022be2eu, 1);
+}
+
 extern "C" void cvs2_apply_assists(void) {
     static const bool easy = enabled("CVS2_EASY_OPERATION");
     static const bool supers = enabled("CVS2_INFINITE_SUPER");

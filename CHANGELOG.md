@@ -3,6 +3,7 @@
 ## 0.1.0 — 2026-11-17
 
 - Integração de recompilação estática de GEOE08 para Linux x86-64.
+- Salvamento automático do perfil no Slot A, inclusive em perfis antigos que tinham Auto Save desligado. Carregamento automático ao iniciar.
 - Controles do Ally, tela cheia, pausa original e cartão virtual.
 - Apresentação VI ordenada junto aos comandos gráficos, corrigindo lutadores que desapareciam.
 - 16:9 sem deformação: frustum de sprites ajustado, fundos com ampliação uniforme e recorte, limites horizontais ampliados para ambos os jogadores.

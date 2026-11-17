@@ -364,15 +364,17 @@ index 80a7a17..f3fa07c 100644
  
  uint32_t gx_frames_submitted() { return gx::g_frames_submitted.load(); }
 diff --git a/runtime/hw/vi.cpp b/runtime/hw/vi.cpp
-index 6357606..e7d53f0 100644
+index 6357606..27a82a1 100644
 --- a/runtime/hw/vi.cpp
 +++ b/runtime/hw/vi.cpp
-@@ -2,12 +2,20 @@
+@@ -2,12 +2,22 @@
  #include "../runtime.h"
  #include <algorithm>
  #include <atomic>
 +#include <mutex>
  
++extern "C" void cvs2_apply_autosave(void);
++
  static uint16_t g_vi[0x80];
  static uint64_t g_frame_start;
  static constexpr uint64_t FIELD_TICKS = (uint64_t)(TB_FREQ / 59.94);
@@ -388,8 +390,9 @@ index 6357606..e7d53f0 100644
  
  static void vi_update_irq() {
      bool any = false;
-@@ -26,9 +34,15 @@ static bool vi_progressive() { return (g_vi[0x02 >> 1] >> 2) & 1; }
+@@ -26,9 +36,16 @@ static bool vi_progressive() { return (g_vi[0x02 >> 1] >> 2) & 1; }
  static void vi_retrace() {
++    cvs2_apply_autosave();
      g_frame_start = now_ticks();
      g_field = vi_progressive() ? 0 : g_field ^ 1;
 -    g_vi_retrace_count++;

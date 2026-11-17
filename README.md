@@ -13,7 +13,7 @@ Repositório: https://github.com/Cyberbonzo/capcom-vs-snk2-eo-ally
 - Tela cheia 1920×1080 e proporção 16:9, com personagens preservados em suas proporções. Os fundos recebem ampliação uniforme e recorte vertical; não há esticamento horizontal. Isso não é expansão inédita da geometria dos cenários.
 - Limites de movimento alterados de ±160 para ±213 unidades em relação à câmera, incluindo a restrição de movimento de pares de lutadores.
 - Apresentação da imagem sincronizada com os comandos gráficos, corrigindo o desaparecimento intermitente dos personagens. Gameplay e 16:9 confirmados pelo usuário no Ally.
-- Controles físicos do Ally, pausa original do jogo e cartão de memória virtual.
+- Controles físicos do Ally e pausa original do jogo. O launcher mantém o Auto Save ligado. O jogo grava o perfil no Slot A nos pontos de salvamento e lê o mesmo cartão automaticamente ao abrir. Para copiar seu progresso, feche o jogo e copie `saves/memcard_a.raw`.
 - GC-ism permanente e barra de super continuamente abastecida para jogadores humanos. A versão com essas assistências foi compilada no Ally e iniciou pelo Steam. Falta confirmar os comandos durante uma luta.
 
 Consulte [compilação](docs/BUILD.md), [controles](docs/CONTROLS.md) e [validação](docs/VALIDATION.md).
